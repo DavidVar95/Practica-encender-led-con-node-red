@@ -1,11 +1,11 @@
-# Practica de temperatura, humedad y distancia con node-red
-Este repositorio muestra como podemos programar una ESP32 con un DHT22 y poder observar los datos con node-red
+# Practica encender led con node-red
+Este repositorio muestra como podemos programar una ESP32 y como mandar una señal desde un servidor publico.
 
 ## Introducción
 
 ### Descripción
 
-En esta practica utilizamos la ```Esp32``` con un un DHT-22 y un sensor ultrasonico para medir temperatura , humedad y distancia. En node-red hacemos un programa para captar los datos para mostrarlos en una grafica e indicadores,para eso se utilisa un mq publico
+En esta practica utilizamos la ```Esp32``` y lo conectamos con un relevador, desde un servidor publico mandamos la señal para encender el led del relevador 
 
 ## Material Necesario
 
@@ -13,8 +13,7 @@ Para realizar esta practica necesitas lo siguiente
 
 - [WOKWI](https://https://wokwi.com/)
 - Tarjeta ESP 32
-- Sensor DHT-22
-- sensor HC-SR04
+- relevador
 - node-red
 
 
@@ -30,56 +29,68 @@ Para poder usar este repositorio necesitas entrar a la plataforma [WOKWI](https:
 1. Abrir la terminal de programación y colocar la siguente programación:
 
 ```
-#include <ArduinoJson.h>
 #include <WiFi.h>
 #include <PubSubClient.h>
-#define BUILTIN_LED 2
-#include "DHTesp.h"
-const int DHT_PIN = 15;
-DHTesp dhtSensor;
-// Update these with values suitable for your network.
 
 const char* ssid = "Wokwi-GUEST";
 const char* password = "";
-const char* mqtt_server = "44.195.202.69";
-String username_mqtt="DavidVargas";
-String password_mqtt="1234";
+const char* mqttServer = "44.195.202.69";
+const int mqttPort = 1883;
+const char* mqttUser = "DavidVargas";
+const char* mqttPassword = "4321";
+const char* mqttTopic = "Vargas95";
 
 WiFiClient espClient;
 PubSubClient client(espClient);
-unsigned long lastMsg = 0;
-#define MSG_BUFFER_SIZE  (50)
-char msg[MSG_BUFFER_SIZE];
-int value = 0;
-const int Trigger = 23;   //Pin digital 2 para el Trigger del sensor
-const int Echo = 22;   //Pin digital 3 para el Echo del sensor
+
+int ledPin = 13; // Pin del LED
+
+void setup() {
+  pinMode(ledPin, OUTPUT);
+  Serial.begin(115200);
+  setup_wifi();
+  client.setServer(mqttServer, mqttPort);
+  client.setCallback(callback);
+}
+
+void loop() {
+  if (!client.connected()) {
+    reconnect();
+  }
+  client.loop();
+}
 
 void setup_wifi() {
-
   delay(10);
-  // We start by connecting to a WiFi network
   Serial.println();
-  Serial.print("Connecting to ");
+  Serial.print("Conectando a: ");
   Serial.println(ssid);
-
-  WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
-
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
   }
-
-  randomSeed(micros());
-
   Serial.println("");
-  Serial.println("WiFi connected");
-  Serial.println("IP address: ");
-  Serial.println(WiFi.localIP());
+  Serial.println("Conectado a la red WiFi");
+}
+
+void reconnect() {
+  while (!client.connected()) {
+    Serial.print("Intentando conexión MQTT...");
+    if (client.connect("ESP32Client", mqttUser, mqttPassword)) {
+      Serial.println("Conectado");
+      client.subscribe(mqttTopic);
+    } else {
+      Serial.print("Error de conexión, rc=");
+      Serial.print(client.state());
+      Serial.println(" Intentando de nuevo en 5 segundos");
+      delay(5000);
+    }
+  }
 }
 
 void callback(char* topic, byte* payload, unsigned int length) {
-  Serial.print("Message arrived [");
+  Serial.print("Mensaje recibido: [");
   Serial.print(topic);
   Serial.print("] ");
   for (int i = 0; i < length; i++) {
@@ -87,164 +98,41 @@ void callback(char* topic, byte* payload, unsigned int length) {
   }
   Serial.println();
 
-  // Switch on the LED if an 1 was received as first character
-  if ((char)payload[0] == '1') {
-    digitalWrite(BUILTIN_LED, LOW);   
-    // Turn the LED on (Note that LOW is the voltage level
-    // but actually the LED is on; this is because
-    // it is active low on the ESP-01)
-  } else {
-    digitalWrite(BUILTIN_LED, HIGH);  
-    // Turn the LED off by making the voltage HIGH
-  }
-
-}
-
-void reconnect() {
-  // Loop until we're reconnected
-  while (!client.connected()) {
-    Serial.print("Attempting MQTT connection...");
-    // Create a random client ID
-    String clientId = "ESP8266Client-";
-    clientId += String(random(0xffff), HEX);
-    // Attempt to connect
-    if (client.connect(clientId.c_str(), username_mqtt.c_str() , password_mqtt.c_str())) {
-      Serial.println("connected");
-      // Once connected, publish an announcement...
-      client.publish("outTopic", "hello world");
-      // ... and resubscribe
-      client.subscribe("inTopic");
+  if (strcmp(topic, mqttTopic) == 0) {
+    if ((char)payload[0] == '1') {
+      digitalWrite(ledPin, HIGH);
     } else {
-      Serial.print("failed, rc=");
-      Serial.print(client.state());
-      Serial.println(" try again in 5 seconds");
-      // Wait 5 seconds before retrying
-      delay(5000);
+      digitalWrite(ledPin, LOW);
     }
-  }
-}
-
-void setup() {
-  pinMode(BUILTIN_LED, OUTPUT);     // Initialize the BUILTIN_LED pin as an output
-  Serial.begin(115200);
-  setup_wifi();
-  client.setServer(mqtt_server, 1883);
-  client.setCallback(callback);
-  dhtSensor.setup(DHT_PIN, DHTesp::DHT22);
-   pinMode(Trigger, OUTPUT); //pin como salida
-  pinMode(Echo, INPUT);  //pin como entrada
-  digitalWrite(Trigger, LOW);//Inicializamos el pin con 0
-}
-
-void loop() {
-
-
-delay(1000);
- long t; //timepo que demora en llegar el eco
-  long d; //distancia en centimetros
-
-  digitalWrite(Trigger, HIGH);
-  delayMicroseconds(10);          //Enviamos un pulso de 10us
-  digitalWrite(Trigger, LOW);
-  
-  t = pulseIn(Echo, HIGH); //obtenemos el ancho del pulso
-  d = t/59;             //escalamos el tiempo a una distancia en cm
-TempAndHumidity  data = dhtSensor.getTempAndHumidity();
-  if (!client.connected()) {
-    reconnect();
-  }
-  client.loop();
-
-  unsigned long now = millis();
-  if (now - lastMsg > 2000) {
-    lastMsg = now;
-    //++value;
-    //snprintf (msg, MSG_BUFFER_SIZE, "hello world #%ld", value);
-
-    StaticJsonDocument<128> doc;
-
-    doc["DEVICE"] = "ESP32";
-    //doc["Anho"] = 2022;
-    //doc["Empresa"] = "Educatronicos";
-    doc["TEMPERATURA"] = String(data.temperature, 1);
-    doc["HUMEDAD"] = String(data.humidity, 1);
-    doc["DISTANCIA"] =d;
-
-    String output;
-    
-    serializeJson(doc, output);
-
-    Serial.print("Publish message: ");
-    Serial.println(output);
-    Serial.println(output.c_str());
-    client.publish("Vargas95", output.c_str());
   }
 }
 ```
 2. Con las librerias
-![](https://github.com/DavidVar95/Practica-temp-hum-y-dist-node-red/blob/main/Captura%20de%20pantalla%202023-06-17%2010.47.00.png?raw=true)
+![](https://github.com/DavidVar95/Practica-encender-led-con-node-red/blob/main/Captura%20de%20pantalla%202023-06-17%2012.23.40.png?raw=true)
 
 3. Realizar la conecion del circuito
 
-![](https://github.com/DavidVar95/Practica-temp-hum-y-dist-node-red/blob/main/Captura%20de%20pantalla%202023-06-17%2010.34.22.png?raw=true)
+![](https://github.com/DavidVar95/Practica-encender-led-con-node-red/blob/main/Captura%20de%20pantalla%202023-06-17%2012.34.45.png?raw=true)
 
-4. Se realiza el programa en bloques para node red
+4. Se realiza el programa en bloques para node red, se coloca un swich para el boton y un mqttout para conectar el servidor publico a wokwi.
 
-![](https://github.com/DavidVar95/Practica-temp-hum-y-dist-node-red/blob/main/Captura%20de%20pantalla%202023-06-17%2010.37.09.png?raw=true)
+![](https://github.com/DavidVar95/Practica-encender-led-con-node-red/blob/main/Captura%20de%20pantalla%202023-06-17%2012.37.41.png?raw=true)
 
-5. colocamos un bloque mqttin y lo vinculamos con el programa en WOKWI
+5. Configurar el bloque con el puerto mqtt con el ip 44.195.202.69 como se muestra en la imagen
 
-![](https://github.com/DavidVar95/Practica-con-DHT-22-Y-node-red/blob/main/Captura%20de%20pantalla%202023-06-16%2022.01.30.png?raw=truee)
-
-6. Configurar el bloque con el puerto mqtt con el ip 44.195.202.69 como se muestra en la imagen
-
-![](https://github.com/DavidVar95/Practica-con-DHT-22-Y-node-red/blob/main/Captura%20de%20pantalla%202023-06-16%2022.05.45.png?raw=true)
-
-7. Colocar el bloque json y configurarlo como se muestra en la imagen
-
-![](https://github.com/DavidVar95/Practica-con-DHT-22-Y-node-red/blob/main/Captura%20de%20pantalla%202023-06-16%2022.07.58.png?raw=true)
-
-8. Colocamos dos bloques function y lo configuramos con el siguente codigo
-
-![](https://github.com/DavidVar95/Practica-temp-hum-y-dist-node-red/blob/main/Captura%20de%20pantalla%202023-06-17%2010.43.08.png?raw=true)
-
-
-```
-msg.payload = msg.payload.TEMPERATURA;
-msg.topic = "TEMPERATURA";
-return msg;
-
-```
-```
-msg.payload = msg.payload.HUMEDAD;
-msg.topic = "HUMEDAD";
-return msg;
-
-```
-```
-msg.payload = msg.payload.DISTANCIA;
-msg.topic = "DISTANCIA";
-return msg;
-
-```
-![](https://github.com/DavidVar95/Practica-temp-hum-y-dist-node-red/blob/main/Captura%20de%20pantalla%202023-06-17%2010.40.55.png?raw=true)
-
+![](https://github.com/DavidVar95/Practica-encender-led-con-node-red/blob/main/Captura%20de%20pantalla%202023-06-17%2012.44.29.png?raw=true)
 
 
 # Resultados
 
-
-![](https://github.com/DavidVar95/Practica-temp-hum-y-dist-node-red/blob/main/Captura%20de%20pantalla%202023-06-17%2010.50.07.png?raw=true)
-
-
-En el node-red podememos ver los datos que esta tomando el ESP32
+Con el Dashboard podemos mandal la señal de encender al led del ESP32
 
 
-![](https://github.com/DavidVar95/Practica-temp-hum-y-dist-node-red/blob/main/Captura%20de%20pantalla%202023-06-17%2010.52.21.png?raw=true))
+![](https://github.com/DavidVar95/Practica-encender-led-con-node-red/blob/main/Captura%20de%20pantalla%202023-06-17%2012.02.06.png?raw=true))
 
-![](https://github.com/DavidVar95/Practica-temp-hum-y-dist-node-red/blob/main/Captura%20de%20pantalla%202023-06-17%2010.52.42.png?raw=true))
+![](https://github.com/DavidVar95/Practica-encender-led-con-node-red/blob/main/Captura%20de%20pantalla%202023-06-17%2012.29.18.png?raw=true))
 
-![](https://github.com/DavidVar95/Practica-temp-hum-y-dist-node-red/blob/main/Captura%20de%20pantalla%202023-06-17%2010.52.50.png?raw=true))
+![](https://github.com/DavidVar95/Practica-encender-led-con-node-red/blob/main/Captura%20de%20pantalla%202023-06-17%2012.29.30.png?raw=true))
 
 # Créditos
 
